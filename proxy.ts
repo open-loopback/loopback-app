@@ -1,6 +1,7 @@
 import { clerkMiddleware } from "@clerk/nextjs/server";
 
-export default clerkMiddleware();
+// Next.js 16 requires named export 'proxy'
+export const proxy = clerkMiddleware();
 
 export const config = {
   matcher: [
