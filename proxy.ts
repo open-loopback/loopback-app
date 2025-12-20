@@ -1,13 +1,19 @@
-import { clerkMiddleware } from "@clerk/nextjs/server";
+import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
-// Next.js 16 requires named export 'proxy'
-export const proxy = clerkMiddleware();
+const isProtectedRoute = createRouteMatcher(["/app(.*)"]);
+
+// Next.js 16 uses 'proxy' instead of default export for middleware
+export const proxy = clerkMiddleware(async (auth, req) => {
+  if (isProtectedRoute(req)) {
+      await auth.protect();
+  }
+});
 
 export const config = {
   matcher: [
     // Skip Next.js internals and all static files, unless found in search params
-    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
+    '/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)',
     // Always run for API routes
-    "/(api|trpc)(.*)",
+    '/(api|trpc)(.*)',
   ],
 };
