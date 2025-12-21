@@ -3,7 +3,22 @@
 import Link from "next/link";
 import { UserButton } from "@clerk/nextjs";
 import TRPCProvider from "@/lib/trpc/provider";
-import { Search, Home, Plus, Settings } from "lucide-react";
+import { AppSidebar } from "@/components/app-sidebar";
+import { ModeToggle } from "@/components/mode-toggle";
+import {
+  SidebarProvider,
+  SidebarInset,
+  SidebarTrigger,
+} from "@/components/ui/sidebar"
+import { Separator } from "@/components/ui/separator";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb"
 import { usePathname } from "next/navigation";
 
 export default function DashboardLayout({
@@ -13,50 +28,52 @@ export default function DashboardLayout({
 }) {
   const pathname = usePathname();
 
+  // Simple breadcrumb logic (can be improved)
+  const pathSegments = pathname.split('/').filter(Boolean).slice(1); // remove 'app'
+
   return (
     <TRPCProvider>
-      <div className="flex h-screen bg-gray-100 dark:bg-gray-900">
-        {/* Sidebar */}
-        <aside className="w-64 bg-white dark:bg-gray-800 border-r hidden md:block">
-          <div className="flex items-center justify-center h-16 border-b">
-            <Link href="/app" className="text-xl font-bold">
-              Loopback
-            </Link>
-          </div>
-          <nav className="p-4 space-y-2">
-            <Link
-              href="/app"
-              className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                pathname === "/app"
-                  ? "bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white"
-                  : "text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
-              }`}
-            >
-              <Home size={18} />
-              Overview
-            </Link>
-            {/* Add more links as needed */}
-          </nav>
-        </aside>
-
-        {/* Main Content */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Header */}
-          <header className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 border-b">
-            <div className="md:hidden">
-              <Link href="/app" className="font-bold">Loopback</Link>
+      <SidebarProvider>
+        <AppSidebar />
+        <SidebarInset>
+          <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4 transition-[width,height] ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:h-12 bg-background">
+            <div className="flex items-center gap-2 px-4">
+              <SidebarTrigger className="-ml-1" />
+              <Separator orientation="vertical" className="mr-2 h-4" />
+              <Breadcrumb>
+                <BreadcrumbList>
+                  <BreadcrumbItem className="hidden md:block">
+                    <BreadcrumbLink href="/app">
+                      Dashboard
+                    </BreadcrumbLink>
+                  </BreadcrumbItem>
+                  {pathSegments.map((segment, index) => (
+                    <div key={segment} className="flex items-center">
+                      <BreadcrumbSeparator className="hidden md:block" />
+                      <BreadcrumbItem>
+                        {index === pathSegments.length - 1 ? (
+                          <BreadcrumbPage className="capitalize">{segment}</BreadcrumbPage>
+                        ) : (
+                          <BreadcrumbLink href={`/app/${pathSegments.slice(0, index + 1).join('/')}`} className="capitalize">
+                            {segment}
+                          </BreadcrumbLink>
+                        )}
+                      </BreadcrumbItem>
+                    </div>
+                  ))}
+                </BreadcrumbList>
+              </Breadcrumb>
             </div>
-            <div className="flex items-center gap-4 ml-auto">
+            <div className="ml-auto flex items-center gap-4">
+              <ModeToggle />
               <UserButton />
             </div>
           </header>
-
-          {/* Page Content */}
-          <main className="flex-1 overflow-y-auto p-4 md:p-6">
+          <main className="flex-1 flex flex-col gap-4 p-4 pt-0">
             {children}
           </main>
-        </div>
-      </div>
+        </SidebarInset>
+      </SidebarProvider>
     </TRPCProvider>
   );
 }
