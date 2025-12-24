@@ -3,7 +3,7 @@
 import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
-import { ArrowLeft, Key, RefreshCw, Star, MoreHorizontal, Eye } from "lucide-react";
+import { ArrowLeft, Key, RefreshCw, Star, Trash2, Eye } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useState, Fragment, useMemo } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -13,12 +13,16 @@ import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { JsonViewer } from "@/components/json-viewer";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 // --- Types ---
 type FeedbackItem = {
@@ -29,84 +33,6 @@ type FeedbackItem = {
   createdAt: string | Date | null;
 };
 
-// --- Columns ---
-const columns: ColumnDef<FeedbackItem>[] = [
-  {
-    accessorKey: "rating",
-    header: "Rating",
-    cell: ({ row }) => {
-      const rating = row.getValue("rating") as number;
-      return (
-        <div className="flex items-center gap-1">
-          <span className="font-semibold">{rating}</span>
-          <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-        </div>
-      );
-    },
-  },
-  {
-    accessorKey: "message",
-    header: "Message",
-    cell: ({ row }) => {
-      const message = row.getValue("message") as string;
-      // Simple truncation
-      const isLong = message.length > 50;
-      const display = isLong ? message.slice(0, 50) + "..." : message;
-
-      return (
-        <div className="space-y-1">
-          <span title={message}>{display}</span>
-          {isLong && (
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button variant="link" size="sm" className="h-auto p-0 ml-2 text-xs text-muted-foreground">View More</Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Feedback Message</DialogTitle>
-                </DialogHeader>
-                <div className="p-4 border rounded-md bg-muted/20 text-sm leading-relaxed whitespace-pre-wrap">
-                  {message}
-                </div>
-              </DialogContent>
-            </Dialog>
-          )}
-        </div>
-      )
-    }
-  },
-  {
-    accessorKey: "metadata",
-    header: "Metadata",
-    cell: ({ row }) => {
-      const metadata = row.getValue("metadata");
-      if (!metadata || Object.keys(metadata).length === 0) return <span className="text-muted-foreground text-xs">None</span>;
-
-      return (
-        <Dialog>
-          <DialogTrigger asChild>
-            <Button variant="outline" size="sm" className="h-7 text-xs"><Eye className="mr-1 h-3 w-3" /> View Data</Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[600px]">
-            <DialogHeader>
-              <DialogTitle>Metadata</DialogTitle>
-            </DialogHeader>
-            <JsonViewer data={metadata} />
-          </DialogContent>
-        </Dialog>
-      )
-    }
-  },
-  {
-    accessorKey: "createdAt",
-    header: "Date",
-    cell: ({ row }) => {
-      const date = row.getValue("createdAt") as string | Date;
-      return <div className="text-muted-foreground text-sm">{date ? new Date(date).toLocaleString() : "N/A"}</div>
-    },
-  },
-];
-
 export default function SourcePage() {
   const params = useParams();
   const projectId = params.projectId as string;
@@ -114,22 +40,28 @@ export default function SourcePage() {
   const router = useRouter();
 
   const { data: source, isLoading: isLoadingSource, refetch: refetchSource } = trpc.sources.getById.useQuery({ id: sourceId });
+  const [pagination, setPagination] = useState({
+    pageIndex: 0,
+    pageSize: 10,
+  });
+
   const {
-    data: feedbackPages,
+    data: feedbackData,
     isLoading: isLoadingFeedbacks,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage
-  } = trpc.feedbacks.getAll.useInfiniteQuery(
-    { sourceId, limit: 100 }, // Increased limit for better table experience
-    { getNextPageParam: (lastPage) => lastPage.nextCursor }
+    refetch: refetchFeedbacks
+  } = trpc.feedbacks.getAll.useQuery(
+    { 
+      sourceId, 
+      limit: pagination.pageSize, 
+      page: pagination.pageIndex 
+    }
   );
 
   const regenerateTokenMutation = trpc.sources.regenerateToken.useMutation();
+  const deleteFeedbackMutation = trpc.feedbacks.delete.useMutation();
   const [tokenDialogOpen, setTokenDialogOpen] = useState(false);
 
   const handleRegenerateToken = async () => {
-    if (!confirm("Are you sure? This will invalidate the old token.")) return;
     try {
       await regenerateTokenMutation.mutateAsync({ id: sourceId });
       refetchSource();
@@ -139,9 +71,141 @@ export default function SourcePage() {
     }
   };
 
-  const flattenedData = useMemo(() => {
-    return feedbackPages?.pages.flatMap(page => page.items) || [];
-  }, [feedbackPages]);
+  const handleDeleteFeedback = async (id: string) => {
+    try {
+      await deleteFeedbackMutation.mutateAsync({ id });
+      refetchFeedbacks();
+      toast.success("Feedback deleted");
+    } catch (err) {
+      toast.error("Failed to delete feedback");
+    }
+  };
+
+  const columns: ColumnDef<FeedbackItem>[] = useMemo(() => [
+    {
+      id: "serial",
+      header: "#",
+      cell: ({ row }) => (
+        <span className="text-muted-foreground font-mono text-xs">
+          {totalCount - (pagination.pageIndex * pagination.pageSize + row.index)}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "rating",
+      header: "Rating",
+      cell: ({ row }) => {
+        const rating = row.getValue("rating") as number;
+        return (
+          <div className="flex items-center gap-1">
+            <span className="font-semibold">{rating}</span>
+            <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
+          </div>
+        );
+      },
+    },
+    {
+      accessorKey: "message",
+      header: "Message",
+      cell: ({ row }) => {
+        const message = row.getValue("message") as string;
+        const isLong = message.length > 50;
+        const display = isLong ? message.slice(0, 50) + "..." : message;
+
+        return (
+          <div className="space-y-1">
+            <span title={message}>{display}</span>
+            {isLong && (
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button variant="link" size="sm" className="h-auto p-0 ml-2 text-xs text-muted-foreground">View More</Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Feedback Message</DialogTitle>
+                  </DialogHeader>
+                  <div className="p-4 border rounded-md bg-muted/20 text-sm leading-relaxed whitespace-pre-wrap">
+                    {message}
+                  </div>
+                </DialogContent>
+              </Dialog>
+            )}
+          </div>
+        )
+      }
+    },
+    {
+      accessorKey: "metadata",
+      header: "Metadata",
+      cell: ({ row }) => {
+        const metadata = row.getValue("metadata");
+        if (!metadata || Object.keys(metadata).length === 0) return <span className="text-muted-foreground text-xs">None</span>;
+
+        return (
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm" className="h-7 text-xs"><Eye className="mr-1 h-3 w-3" /> View Data</Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[600px]">
+              <DialogHeader>
+                <DialogTitle>Metadata</DialogTitle>
+              </DialogHeader>
+              <JsonViewer data={metadata} />
+            </DialogContent>
+          </Dialog>
+        )
+      }
+    },
+    {
+      accessorKey: "createdAt",
+      header: "Date",
+      cell: ({ row }) => {
+        const date = row.getValue("createdAt") as string | Date;
+        return <div className="text-muted-foreground text-sm">{date ? new Date(date).toLocaleString() : "N/A"}</div>
+      },
+    },
+    {
+        id: "actions",
+        cell: ({ row }) => {
+            const feedback = row.original;
+            return (
+                <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                        <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                        >
+                            <Trash2 className="h-4 w-4" />
+                            <span className="sr-only">Delete feedback</span>
+                        </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                                This action cannot be undone. This will permanently delete the feedback.
+                            </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction 
+                                onClick={() => handleDeleteFeedback(feedback.id)}
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            >
+                                Delete
+                            </AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
+            )
+        }
+    }
+  ], [deleteFeedbackMutation, refetchFeedbacks]);
+
+  const items = feedbackData?.items || [];
+  const totalCount = feedbackData?.totalCount || 0;
+  const pageCount = Math.ceil(totalCount / pagination.pageSize);
 
   if (isLoadingSource) return <div className="p-6">Loading...</div>;
   if (!source) return <div className="p-6">Source not found</div>;
@@ -179,10 +243,31 @@ export default function SourcePage() {
                 </Button>
               </div>
               <DialogFooter>
-                <Button variant="destructive" onClick={handleRegenerateToken} disabled={regenerateTokenMutation.isPending}>
-                  <RefreshCw className={`mr-2 h-4 w-4 ${regenerateTokenMutation.isPending ? "animate-spin" : ""}`} />
-                  Regenerate Token
-                </Button>
+                <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                        <Button variant="destructive" disabled={regenerateTokenMutation.isPending}>
+                            <RefreshCw className={`mr-2 h-4 w-4 ${regenerateTokenMutation.isPending ? "animate-spin" : ""}`} />
+                            Regenerate Token
+                        </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                                This will invalidate the current token and generate a new one. Any applications using the old token will no longer be able to send feedback.
+                            </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction 
+                                onClick={handleRegenerateToken}
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            >
+                                Regenerate
+                            </AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -196,19 +281,13 @@ export default function SourcePage() {
         {isLoadingFeedbacks ? (
           <div className="flex justify-center p-8">Loading feedbacks...</div>
         ) : (
-          <DataTable columns={columns} data={flattenedData} />
-        )}
-
-        {hasNextPage && (
-          <div className="flex justify-center mt-4 border-t pt-4">
-            <Button
-              variant="outline"
-              onClick={() => fetchNextPage()}
-              disabled={isFetchingNextPage}
-            >
-              {isFetchingNextPage ? "Loading more..." : "Load More"}
-            </Button>
-          </div>
+          <DataTable 
+            columns={columns} 
+            data={items} 
+            pageCount={pageCount}
+            pagination={pagination}
+            onPaginationChange={setPagination}
+          />
         )}
       </div>
     </div>

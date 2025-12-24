@@ -21,7 +21,7 @@ export const HeroFeedbackWidget = () => {
         <Loopback
             sourceId="src_22e3eb84e09074104685538567745bd2"
             variant="modal"
-            defaultOpen={true}
+            defaultOpen={false}
             theme={{
                 darkMode: resolvedTheme === "dark",
                 primaryColor: "oklch(0.627 0.265 303.9)", // matches the theme primary indigo

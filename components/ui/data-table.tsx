@@ -38,11 +38,20 @@ import {
 interface DataTableProps<TData, TValue> {
     columns: ColumnDef<TData, TValue>[]
     data: TData[]
+    pageCount?: number
+    pagination?: {
+        pageIndex: number
+        pageSize: number
+    }
+    onPaginationChange?: (pagination: { pageIndex: number; pageSize: number }) => void
 }
 
 export function DataTable<TData, TValue>({
     columns,
     data,
+    pageCount,
+    pagination,
+    onPaginationChange,
 }: DataTableProps<TData, TValue>) {
     const [sorting, setSorting] = React.useState<SortingState>([])
     const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
@@ -52,22 +61,33 @@ export function DataTable<TData, TValue>({
         React.useState<VisibilityState>({})
     const [rowSelection, setRowSelection] = React.useState({})
 
+    const isServerSide = pageCount !== undefined
+
     const table = useReactTable({
         data,
         columns,
+        pageCount: pageCount ?? -1,
+        manualPagination: isServerSide,
         onSortingChange: setSorting,
         onColumnFiltersChange: setColumnFilters,
         getCoreRowModel: getCoreRowModel(),
-        getPaginationRowModel: getPaginationRowModel(),
+        getPaginationRowModel: isServerSide ? undefined : getPaginationRowModel(),
         getSortedRowModel: getSortedRowModel(),
         getFilteredRowModel: getFilteredRowModel(),
         onColumnVisibilityChange: setColumnVisibility,
         onRowSelectionChange: setRowSelection,
+        onPaginationChange: (updater) => {
+            if (onPaginationChange && pagination) {
+                const nextPagination = typeof updater === 'function' ? updater(pagination) : updater
+                onPaginationChange(nextPagination)
+            }
+        },
         state: {
             sorting,
             columnFilters,
             columnVisibility,
             rowSelection,
+            ...(isServerSide ? { pagination } : {}),
         },
     })
 
@@ -160,6 +180,10 @@ export function DataTable<TData, TValue>({
                 </Table>
             </div>
             <div className="flex items-center justify-end space-x-2 py-4">
+                <div className="flex-1 text-sm text-muted-foreground">
+                    Page {table.getState().pagination.pageIndex + 1} of{" "}
+                    {table.getPageCount()}
+                </div>
                 <div className="space-x-2">
                     <Button
                         variant="outline"

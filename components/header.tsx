@@ -13,12 +13,8 @@ export const navLinks = [
 		href: "/#features",
 	},
 	{
-		label: "Pricing",
-		href: "/#pricing",
-	},
-	{
 		label: "GitHub",
-		href: "https://github.com/anishroy/open-loopback",
+		href: "https://github.com/open-loopback/loopback",
 	},
 ];
 
