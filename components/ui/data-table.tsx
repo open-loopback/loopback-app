@@ -13,7 +13,7 @@ import {
     getSortedRowModel,
     useReactTable,
 } from "@tanstack/react-table"
-import { ArrowUpDown, ChevronDown, MoreHorizontal } from "lucide-react"
+import { ArrowUpDown, ChevronDown, MoreHorizontal, RefreshCw } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -44,6 +44,9 @@ interface DataTableProps<TData, TValue> {
         pageSize: number
     }
     onPaginationChange?: (pagination: { pageIndex: number; pageSize: number }) => void
+    onRefresh?: () => void
+    searchValue?: string
+    onSearchChange?: (value: string) => void
 }
 
 export function DataTable<TData, TValue>({
@@ -52,6 +55,9 @@ export function DataTable<TData, TValue>({
     pageCount,
     pagination,
     onPaginationChange,
+    onRefresh,
+    searchValue,
+    onSearchChange,
 }: DataTableProps<TData, TValue>) {
     const [sorting, setSorting] = React.useState<SortingState>([])
     const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
@@ -60,6 +66,7 @@ export function DataTable<TData, TValue>({
     const [columnVisibility, setColumnVisibility] =
         React.useState<VisibilityState>({})
     const [rowSelection, setRowSelection] = React.useState({})
+    const [localSearchValue, setLocalSearchValue] = React.useState(searchValue ?? "")
 
     const isServerSide = pageCount !== undefined
 
@@ -91,18 +98,43 @@ export function DataTable<TData, TValue>({
         },
     })
 
+    React.useEffect(() => {
+        setLocalSearchValue(searchValue ?? "")
+    }, [searchValue])
+
+    React.useEffect(() => {
+        if (localSearchValue === (searchValue ?? "")) return;
+        const timer = setTimeout(() => {
+            if (onSearchChange) {
+                onSearchChange(localSearchValue)
+            } else {
+                table.getColumn("message")?.setFilterValue(localSearchValue)
+            }
+        }, 1000)
+        return () => clearTimeout(timer)
+    }, [localSearchValue, onSearchChange, searchValue, table])
+
     return (
         <div className="w-full">
             <div className="flex items-center py-4">
                 <Input
                     placeholder="Filter messages..."
-                    value={(table.getColumn("message")?.getFilterValue() as string) ?? ""}
-                    onChange={(event) =>
-                        table.getColumn("message")?.setFilterValue(event.target.value)
-                    }
+                    value={localSearchValue}
+                    onChange={(event) => setLocalSearchValue(event.target.value)}
                     className="max-w-sm"
                 />
-                <DropdownMenu>
+                <div className="ml-auto flex items-center gap-2">
+                    {onRefresh && (
+                        <Button
+                            variant="outline"
+                            size="icon"
+                            onClick={onRefresh}
+                            title="Refresh data"
+                        >
+                            <RefreshCw className="h-4 w-4" />
+                        </Button>
+                    )}
+                    <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                         <Button variant="outline" className="ml-auto">
                             Columns <ChevronDown className="ml-2 h-4 w-4" />
@@ -128,6 +160,7 @@ export function DataTable<TData, TValue>({
                             })}
                     </DropdownMenuContent>
                 </DropdownMenu>
+                </div>
             </div>
             <div className="rounded-md border">
                 <Table>

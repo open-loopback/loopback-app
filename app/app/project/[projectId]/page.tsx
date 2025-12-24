@@ -2,7 +2,7 @@
 
 import { trpc } from "@/lib/trpc/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { MessageSquare, Star, Folder, Users, ArrowUpRight } from "lucide-react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -109,7 +109,7 @@ export default function ProjectDashboard() {
           <CardContent className="pl-2">
             <div className="h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={stats?.feedbacksOverTime}>
+                <LineChart data={stats?.feedbacksOverTime}>
                   <XAxis
                     dataKey="date"
                     stroke="#888888"
@@ -134,12 +134,14 @@ export default function ProjectDashboard() {
                     itemStyle={{ color: 'var(--foreground)' }}
                     cursor={{ fill: 'var(--muted)' }}
                   />
-                  <Bar
+                  <Line
+                    type="monotone"
                     dataKey="count"
-                    fill="var(--primary)"
-                    radius={[4, 4, 0, 0]}
+                    stroke="var(--primary)"
+                    strokeWidth={2}
+                    dot={false}
                   />
-                </BarChart>
+                </LineChart>
               </ResponsiveContainer>
             </div>
           </CardContent>

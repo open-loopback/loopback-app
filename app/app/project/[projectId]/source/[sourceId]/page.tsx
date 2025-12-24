@@ -4,8 +4,8 @@ import { trpc } from "@/lib/trpc/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { ArrowLeft, Key, RefreshCw, Star, Trash2, Eye } from "lucide-react";
-import { useParams, useRouter } from "next/navigation";
-import { useState, Fragment, useMemo } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useState, Fragment, useMemo, useEffect, useCallback } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { DataTable } from "@/components/ui/data-table";
 import { ColumnDef } from "@tanstack/react-table";
@@ -33,17 +33,23 @@ type FeedbackItem = {
   createdAt: string | Date | null;
 };
 
+const PAGE_SIZE = 30;
+
 export default function SourcePage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const projectId = params.projectId as string;
   const sourceId = params.sourceId as string;
   const router = useRouter();
 
-  const { data: source, isLoading: isLoadingSource, refetch: refetchSource } = trpc.sources.getById.useQuery({ id: sourceId });
   const [pagination, setPagination] = useState({
-    pageIndex: 0,
-    pageSize: 10,
+    pageIndex: searchParams.get("page") ? parseInt(searchParams.get("page")!) : 0,
+    pageSize: PAGE_SIZE,
   });
+
+  const [searchValue, setSearchValue] = useState(searchParams.get("q") || "");
+
+  const { data: source, isLoading: isLoadingSource, refetch: refetchSource } = trpc.sources.getById.useQuery({ id: sourceId });
 
   const {
     data: feedbackData,
@@ -53,9 +59,31 @@ export default function SourcePage() {
     { 
       sourceId, 
       limit: pagination.pageSize, 
-      page: pagination.pageIndex 
+      page: pagination.pageIndex,
+      q: searchValue
     }
   );
+
+  useEffect(() => {
+    const currentParams = new URLSearchParams(searchParams.toString());
+    const newParams = new URLSearchParams(searchParams.toString());
+    
+    if (pagination.pageIndex > 0) {
+      newParams.set("page", pagination.pageIndex.toString());
+    } else {
+      newParams.delete("page");
+    }
+    
+    if (searchValue) {
+      newParams.set("q", searchValue);
+    } else {
+      newParams.delete("q");
+    }
+
+    if (newParams.toString() !== currentParams.toString()) {
+      router.replace(`?${newParams.toString()}`);
+    }
+  }, [pagination.pageIndex, searchValue, router, searchParams]);
 
   const regenerateTokenMutation = trpc.sources.regenerateToken.useMutation();
   const deleteFeedbackMutation = trpc.feedbacks.delete.useMutation();
@@ -287,6 +315,12 @@ export default function SourcePage() {
             pageCount={pageCount}
             pagination={pagination}
             onPaginationChange={setPagination}
+            onRefresh={() => refetchFeedbacks()}
+            searchValue={searchValue}
+            onSearchChange={(val) => {
+              setSearchValue(val);
+              setPagination(prev => ({ ...prev, pageIndex: 0 })); // Reset to first page on search
+            }}
           />
         )}
       </div>

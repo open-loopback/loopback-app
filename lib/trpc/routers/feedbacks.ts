@@ -11,29 +11,49 @@ export const feedbacksRouter = createTRPCRouter({
         sourceId: z.string(),
         limit: z.number().min(1).max(100).default(10),
         page: z.number().min(0).default(0),
+        q: z.string().optional(),
     }))
     .query(async ({ input, ctx }) => {
        if (!ctx.userId) return { items: [], totalCount: 0 };
        
-       // Verify ownership (optional but recommended)
-       // Skip for performance or assume sourceId is secret enough? No, user can list.
-       
-       const [items, total] = await Promise.all([
-           db.query.feedbacks.findMany({
-               where: (feedbacks, { eq }) => eq(feedbacks.source, input.sourceId),
-               limit: input.limit,
-               offset: input.page * input.limit,
-               orderBy: [desc(feedbacks.createdAt), desc(feedbacks.id)],
-           }),
-           db.query.feedbacks.findMany({
-               where: (feedbacks, { eq }) => eq(feedbacks.source, input.sourceId),
-               columns: { id: true }
-           })
-       ]);
+       const totalQuery = await db.query.feedbacks.findMany({
+           where: (feedbacks, { eq }) => eq(feedbacks.source, input.sourceId),
+           columns: { id: true }
+       });
+       const totalCount = totalQuery.length;
+
+       // Handle serial number search (#120)
+       if (input.q?.startsWith("#")) {
+           const sn = parseInt(input.q.slice(1));
+           if (!isNaN(sn)) {
+               // Serial number is totalCount - index
+               // so index = totalCount - sn
+               const index = totalCount - sn;
+               if (index >= 0 && index < totalCount) {
+                   const item = await db.query.feedbacks.findFirst({
+                       where: (feedbacks, { eq }) => eq(feedbacks.source, input.sourceId),
+                       offset: index,
+                       orderBy: [desc(feedbacks.createdAt), desc(feedbacks.id)],
+                   });
+                   return { items: item ? [item] : [], totalCount: 1 };
+               }
+               return { items: [], totalCount: 0 };
+           }
+       }
+
+       const items = await db.query.feedbacks.findMany({
+           where: (feedbacks, { eq, and, ilike }) => and(
+               eq(feedbacks.source, input.sourceId),
+               input.q ? ilike(feedbacks.message, `%${input.q}%`) : undefined
+           ),
+           limit: input.limit,
+           offset: input.page * input.limit,
+           orderBy: [desc(feedbacks.createdAt), desc(feedbacks.id)],
+       });
 
       return {
           items,
-          totalCount: total.length
+          totalCount
       };
     }),
   delete: publicProcedure
