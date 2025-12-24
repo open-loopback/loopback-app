@@ -1,3 +1,4 @@
+import { relations } from "drizzle-orm";
 import {
   integer,
   jsonb,
@@ -36,3 +37,22 @@ export const feedbacks = pgTable("feedbacks", {
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
+
+export const projectsRelations = relations(projects, ({ many }) => ({
+  sources: many(sources),
+}));
+
+export const sourcesRelations = relations(sources, ({ one, many }) => ({
+  project: one(projects, {
+    fields: [sources.projectId],
+    references: [projects.id],
+  }),
+  feedbacks: many(feedbacks),
+}));
+
+export const feedbacksRelations = relations(feedbacks, ({ one }) => ({
+  source: one(sources, {
+    fields: [feedbacks.source],
+    references: [sources.id],
+  }),
+}));

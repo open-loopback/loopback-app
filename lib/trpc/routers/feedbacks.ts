@@ -1,12 +1,12 @@
 import { z } from "zod";
-import { createTRPCRouter, publicProcedure } from "../init";
+import { createTRPCRouter, publicProcedure, protectedProcedure } from "../init";
 import { feedbacks, sources, projects } from "@/db/schema";
 import { db } from "@/db";
 import { eq, desc, and, lt, gt } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
 export const feedbacksRouter = createTRPCRouter({
-  getAll: publicProcedure
+  getAll: protectedProcedure
     .input(z.object({ 
         sourceId: z.string(),
         limit: z.number().min(1).max(100).default(10),
@@ -14,7 +14,17 @@ export const feedbacksRouter = createTRPCRouter({
         q: z.string().optional(),
     }))
     .query(async ({ input, ctx }) => {
-       if (!ctx.userId) return { items: [], totalCount: 0 };
+       // Verify source ownership
+       const source = await db.query.sources.findFirst({
+           where: eq(sources.id, input.sourceId),
+           with: {
+               project: true
+           }
+       });
+
+       if (!source || source.project.userId !== ctx.userId) {
+           return { items: [], totalCount: 0 };
+       }
        
        const totalQuery = await db.query.feedbacks.findMany({
            where: (feedbacks, { eq }) => eq(feedbacks.source, input.sourceId),
@@ -26,8 +36,6 @@ export const feedbacksRouter = createTRPCRouter({
        if (input.q?.startsWith("#")) {
            const sn = parseInt(input.q.slice(1));
            if (!isNaN(sn)) {
-               // Serial number is totalCount - index
-               // so index = totalCount - sn
                const index = totalCount - sn;
                if (index >= 0 && index < totalCount) {
                    const item = await db.query.feedbacks.findFirst({
@@ -56,28 +64,26 @@ export const feedbacksRouter = createTRPCRouter({
           totalCount
       };
     }),
-  delete: publicProcedure
+  delete: protectedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ input, ctx }) => {
-      if (!ctx.userId) throw new TRPCError({ code: "UNAUTHORIZED" });
-
       const feedback = await db.query.feedbacks.findFirst({
         where: eq(feedbacks.id, input.id),
+        with: {
+            source: {
+                with: {
+                    project: true
+                }
+            }
+        }
       });
 
       if (!feedback) throw new TRPCError({ code: "NOT_FOUND" });
 
-      const source = await db.query.sources.findFirst({
-        where: eq(sources.id, feedback.source),
-      });
-
-      if (!source) throw new TRPCError({ code: "NOT_FOUND" });
-
-      const project = await db.query.projects.findFirst({
-        where: and(eq(projects.id, source.projectId), eq(projects.userId, ctx.userId)),
-      });
-
-      if (!project) throw new TRPCError({ code: "FORBIDDEN" });
+      // @ts-ignore - nested relations work if defined
+      if (feedback.source.project.userId !== ctx.userId) {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
 
       await db.delete(feedbacks).where(eq(feedbacks.id, input.id));
 
