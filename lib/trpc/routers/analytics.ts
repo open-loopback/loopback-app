@@ -4,6 +4,7 @@ import { eq, sql, and, gte } from "drizzle-orm";
 import { createTRPCRouter, protectedProcedure } from "../init";
 import { feedbacks, sources, projects } from "@/db/schema";
 import { db } from "@/db";
+import { cache } from "@/lib/cache";
 
 export const analyticsRouter = createTRPCRouter({
     getStats: protectedProcedure
@@ -15,72 +16,77 @@ export const analyticsRouter = createTRPCRouter({
         )
         .query(async ({ input, ctx }) => {
             const { projectId, sourceId } = input;
-            const { userId } = ctx; // ctx.userId is guaranteed by protectedProcedure
+            const { userId } = ctx;
 
-            const thirtyDaysAgo = new Date();
-            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+            const cacheKey = `analytics:stats:u:${userId}:p:${projectId || 'all'}:s:${sourceId || 'all'}`;
 
-            // Helper to apply filters and USER SCOPE
-            // We must always ensure the feedback belongs to a project owned by the user
-            // Note: 'query' here is expected to be a Drizzle query builder instance
-            const applyFilters = (query: any) => {
-                let base = query.innerJoin(sources, eq(feedbacks.source, sources.id))
-                    .innerJoin(projects, eq(sources.projectId, projects.id));
+            return await cache.wrap(
+                cacheKey,
+                async () => {
+                    const thirtyDaysAgo = new Date();
+                    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-                base = base.where(and(
-                    eq(projects.userId, userId),
-                    sourceId ? eq(feedbacks.source, sourceId) : undefined,
-                    projectId ? eq(sources.projectId, projectId) : undefined
-                ));
-                return base;
-            };
+                    const applyFilters = (query: any) => {
+                        let base = query.innerJoin(sources, eq(feedbacks.source, sources.id))
+                            .innerJoin(projects, eq(sources.projectId, projects.id));
 
-            // 1. Total Feedbacks
-            const totalFeedbacksQuery = db
-                .select({ count: sql<number>`count(${feedbacks.id})`.as('count') })
-                .from(feedbacks);
+                        base = base.where(and(
+                            eq(projects.userId, userId),
+                            sourceId ? eq(feedbacks.source, sourceId) : undefined,
+                            projectId ? eq(sources.projectId, projectId) : undefined
+                        ));
+                        return base;
+                    };
 
-            const totalFeedbacksRes = await applyFilters(totalFeedbacksQuery);
-            const totalFeedbacks = Number(totalFeedbacksRes[0]?.count || 0);
+                    // 1. Total Feedbacks
+                    const totalFeedbacksQuery = db
+                        .select({ count: sql<number>`count(${feedbacks.id})`.as('count') })
+                        .from(feedbacks);
 
-            // 2. Average Rating
-            const avgRatingQuery = db
-                .select({ avg: sql<number>`avg(${feedbacks.rating})`.as('avg') })
-                .from(feedbacks);
+                    const totalFeedbacksRes = await applyFilters(totalFeedbacksQuery);
+                    const totalFeedbacks = Number(totalFeedbacksRes[0]?.count || 0);
 
-            const avgRatingRes = await applyFilters(avgRatingQuery);
-            const averageRating = Number(avgRatingRes[0]?.avg || 0);
+                    // 2. Average Rating
+                    const avgRatingQuery = db
+                        .select({ avg: sql<number>`avg(${feedbacks.rating})`.as('avg') })
+                        .from(feedbacks);
 
-            // 3. Feedbacks Over Time (Last 30 days)
-            const overTimeQuery = db
-                .select({
-                    date: sql<string>`to_char(${feedbacks.createdAt}, 'YYYY-MM-DD')`.as('date'),
-                    count: sql<number>`count(${feedbacks.id})`.as('count')
-                })
-                .from(feedbacks);
+                    const avgRatingRes = await applyFilters(avgRatingQuery);
+                    const averageRating = Number(avgRatingRes[0]?.avg || 0);
 
-            // We need to re-apply the join logic specifically for this query because of GroupBy
-            let baseOverTime = overTimeQuery
-                .innerJoin(sources, eq(feedbacks.source, sources.id))
-                .innerJoin(projects, eq(sources.projectId, projects.id))
-                .where(and(
-                    eq(projects.userId, userId),
-                    gte(feedbacks.createdAt, thirtyDaysAgo),
-                    sourceId ? eq(feedbacks.source, sourceId) : undefined,
-                    projectId ? eq(sources.projectId, projectId) : undefined
-                ));
+                    // 3. Feedbacks Over Time (Last 30 days)
+                    const overTimeQuery = db
+                        .select({
+                            date: sql<string>`to_char(${feedbacks.createdAt}, 'YYYY-MM-DD')`.as('date'),
+                            count: sql<number>`count(${feedbacks.id})`.as('count')
+                        })
+                        .from(feedbacks);
 
-            const feedbacksOverTime = await baseOverTime
-                .groupBy(sql`to_char(${feedbacks.createdAt}, 'YYYY-MM-DD')`)
-                .orderBy(sql`to_char(${feedbacks.createdAt}, 'YYYY-MM-DD')`);
+                    let baseOverTime = overTimeQuery
+                        .innerJoin(sources, eq(feedbacks.source, sources.id))
+                        .innerJoin(projects, eq(sources.projectId, projects.id))
+                        .where(and(
+                            eq(projects.userId, userId),
+                            gte(feedbacks.createdAt, thirtyDaysAgo),
+                            sourceId ? eq(feedbacks.source, sourceId) : undefined,
+                            projectId ? eq(sources.projectId, projectId) : undefined
+                        ));
 
-            return {
-                totalFeedbacks,
-                averageRating,
-                feedbacksOverTime: feedbacksOverTime.map(item => ({
-                    date: item.date,
-                    count: Number(item.count)
-                })),
-            };
+                    const feedbacksOverTime = await baseOverTime
+                        .groupBy(sql`to_char(${feedbacks.createdAt}, 'YYYY-MM-DD')`)
+                        .orderBy(sql`to_char(${feedbacks.createdAt}, 'YYYY-MM-DD')`);
+
+                    return {
+                        totalFeedbacks,
+                        averageRating,
+                        feedbacksOverTime: feedbacksOverTime.map(item => ({
+                            date: item.date,
+                            count: Number(item.count)
+                        })),
+                    };
+                },
+                300 // 5 minutes
+            );
         }),
+
 });
