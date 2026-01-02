@@ -7,7 +7,15 @@
 ![tRPC](https://img.shields.io/badge/tRPC-2596be?style=for-the-badge&logo=trpc&logoColor=white)
 ![Drizzle](https://img.shields.io/badge/Drizzle-C5F74F?style=for-the-badge&logo=drizzle&logoColor=black)
 
-Loopback App is a modern web application built with Next.js 16, featuring robust authentication, database management, and caching.
+Loopback App is the powerful dashboard management system for **Loopback** — a beautiful, polished, and embeddable feedback widget for React.
+
+[Loopback](https://www.npmjs.com/package/open-loopback) is a themeable feedback component designed to be dropped into any React application. It offers:
+- **Flexible Layouts:** Support for both modal and embedded layouts.
+- **Versatile Ratings:** Input collection via emoji, star, or number ratings.
+- **Rich Theming:** Fully customizable aesthetics, including native dark mode support.
+- **Developer Friendly:** Supports both controlled and uncontrolled usage for maximum integration flexibility.
+
+This repository serves as the administrative backend and dashboard for managing submissions, project configurations, and analytics for your feedback widgets.
 
 ## Tech Stack
 
